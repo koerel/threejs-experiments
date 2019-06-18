@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<title>WebGL 3D Experiment</title>
+		<meta charset="utf-8">
+		<link rel="stylesheet" type="text/css" href="css/thestyle.css">
+	</head>
+	<body>
+		<script src="js/three.min.js"></script>
+		<script src="js/OBJLoader.js"></script>
+		<script src="js/OrbitControls.js"></script>
+		<script src="js/Detector.js"></script>
+		<div id="controls">
+			<p>Scale</p>
+			Scale X-axis <input type="range" id="xscaler" min="10" max="100"></input><br>
+			Scale Y-axis <input type="range" id="yscaler" min="10" max="100"></input><br>
+			Scale Z-axis <input type="range" id="zscaler" min="10" max="100"></input><br><br>
+			<input type="submit" id="resetscaler" value="reset"></input><br><br>
+			<p>Material</p>
+			<input type="submit" id="mat1" value="Wireframe"></input><br>
+			<input type="submit" id="mat2" value="Texture"></input><br>
+			<input type="submit" id="mat3" value="Material"></input><br>
+			<input type="submit" id="mat4" value="Shader"></input><br>
+			<input type="submit" id="btnlook" value="Look"></input><input type="submit" id="btndraw" value="Draw"></input><br>
+			<input type="text" id="inputtext"></input>
+		</div>
+		<script id="vertexShader" type="x-shader/x-vertex">
+			varying vec2 vUv;
+			void main() 
+			{ 
+				vUv = uv;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+			}
+		</script>
+		<script id="fragmentShader" type="x-shader/x-vertex"> 
+			uniform float time;
+			uniform vec2 resolution;
+
+			varying vec2 vUv;
+
+			void main( void ) {
+
+				vec2 position = -1.0 + 4.0 * vUv;
+
+				float red = abs( sin( position.x * position.y + time / 5.0 ) );
+				float green = abs( sin( position.x * position.y + time / 4.0 ) );
+				float blue = abs( sin( position.x * position.y + time / 3.0 ) );
+				gl_FragColor = vec4( red, green, blue, 1.0 );
+
+			}
+		</script>
+		<script>
+			var loader = new THREE.JSONLoader();
+			var WIDTH = window.innerWidth;
+			var HEIGHT = window.innerHeight;
+			var linevectors = [];
+			var xpos = 0;
+			var j = 0;
+			var letterobject = new THREE.Object3D;
+			var axis = new THREE.Vector3( );
+			var up = new THREE.Vector3( 0, 1, 0 );
+			var numlinevectors = 0;
+			var mouse3D = new THREE.Vector3();
+			var projector = new THREE.Projector();
+			var cube = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), new THREE.MeshBasicMaterial({color: 0xff2222}));
+			
+			init();
+			animate();
+
+			function init() {
+			
+				// check if IE or real browser
+				if ( Detector.webgl )
+					renderer = new THREE.WebGLRenderer( {antialias:true} );
+				else
+					renderer = new THREE.CanvasRenderer();
+					
+				// create materials
+				var matTexture = THREE.ImageUtils.loadTexture( 'textures/plate.jpg');
+				var material1 = new THREE.MeshPhongMaterial({ wireframe: true });
+				var material2 = new THREE.MeshPhongMaterial({ color:0xFFFFFF, map: matTexture });	
+				var material3 = new THREE.MeshPhongMaterial({specular: 0xd5b100, color: 0xd5b100, ambient: 0xd5b100, shininess: 50, shading: THREE.SmoothShading});
+				this.customUniforms = {
+					time: { type: "f", value: 1.0 },
+					resolution: { type: "v2", value: new THREE.Vector2() }
+				};
+				var material4 = new THREE.ShaderMaterial( 
+				{
+					uniforms: customUniforms,
+					vertexShader:   document.getElementById( 'vertexShader'   ).textContent,
+					fragmentShader: document.getElementById( 'fragmentShader' ).textContent
+				}   );
+				var drawmaterial = new THREE.MeshBasicMaterial({vertexColors: THREE.FaceColors, side:THREE.DoubleSide});
+				
+				// create scene
+				scene = new THREE.Scene();
+				
+				// create renderer & attach
+				renderer.setSize(WIDTH, HEIGHT);
+				renderer.domElement.style.display = 'inline';
+				renderer.domElement.style.float = 'left';
+				renderer.shadowMapEnabled = true;
+				renderer.shadowMapSoft = true;
+				document.body.appendChild(renderer.domElement);
+				
+				// create camera and add
+				camera = new THREE.PerspectiveCamera(45, WIDTH / HEIGHT, 0.1, 20000);
+				camera.lookAt(scene.position);
+				camera.position.set(0,5,0);
+				scene.add(camera);
+				
+				// eventlistener for window-resize
+				window.addEventListener('resize', function() {
+					WIDTH = window.innerWidth;
+					HEIGHT = window.innerHeight;
+					renderer.setSize(WIDTH, HEIGHT);
+					camera.aspect = WIDTH / HEIGHT;
+					camera.updateProjectionMatrix();
+				});
+				
+				// set bgcolor
+				renderer.setClearColor(0x000000);
+				
+				// add light to scene
+				var light1 = new THREE.DirectionalLight(0xffffff);
+				light1.position.set(-3,2,-0.5).normalize();
+				scene.add(light1);
+				var light2 = new THREE.DirectionalLight(0xffffff);
+				light2.position.set(3,2,0.5);
+				light2.castShadow = true;
+				light2.shadowDarkness = 0.5;
+				light2.shadowMapWidth = 10;
+				light2.shadowMapHeight = 10;
+				var d = 2;
+				light2.shadowCameraLeft = -d;
+				light2.shadowCameraRight = d;
+				light2.shadowCameraTop = d;
+				light2.shadowCameraBottom = -d;
+				light2.shadowCameraFar = 10;
+				scene.add(light2);
+				
+				// add eventhandlers
+				document.getElementById("btnlook").addEventListener( "click", function(){controls.enabled = true; window.removeEventListener("mousedown", drawPath, false);}, false );
+				document.getElementById("btndraw").addEventListener( "click", drawMode, false );
+				document.getElementById("inputtext").addEventListener( "keydown", addText, false );
+				document.getElementById("xscaler").addEventListener( "mouseup", reScale, false );
+				document.getElementById("yscaler").addEventListener( "mouseup", reScale, false );
+				document.getElementById("zscaler").addEventListener( "mouseup", reScale, false );
+				document.getElementById("resetscaler").addEventListener( "click", doReset, false );
+				document.getElementById("mat1").addEventListener( "click", setMat, false );
+				document.getElementById("mat2").addEventListener( "click", setMat, false );
+				document.getElementById("mat3").addEventListener( "click", setMat, false );
+				document.getElementById("mat4").addEventListener( "click", setMat, false );
+				
+				// generate UV's for object
+				assignUVs = function(geometry){
+					geometry.computeBoundingBox();
+					var max     = geometry.boundingBox.max;
+					var min     = geometry.boundingBox.min;
+					var offset  = new THREE.Vector2(0 - min.x, 0 - min.y);
+					var range   = new THREE.Vector2(max.x - min.x, max.y - min.y);
+					geometry.faceVertexUvs[0] = [];
+					var faces = geometry.faces;
+					for (i = 0; i < geometry.faces.length ; i++) {
+						var v1 = geometry.vertices[faces[i].a];
+						var v2 = geometry.vertices[faces[i].b];
+						var v3 = geometry.vertices[faces[i].c];
+						geometry.faceVertexUvs[0].push([
+						new THREE.Vector2( ( v1.x + offset.x ) / range.x , ( v1.y + offset.y ) / range.y ),
+						new THREE.Vector2( ( v2.x + offset.x ) / range.x , ( v2.y + offset.y ) / range.y ),
+						new THREE.Vector2( ( v3.x + offset.x ) / range.x , ( v3.y + offset.y ) / range.y )
+						]);
+					}
+					geometry.uvsNeedUpdate = true;
+				}
+				
+				// load object and create mesh
+				loader.load( "models/sealring.js", function(geometry){meshMaker(geometry)});
+				
+				function meshMaker(geometry) {
+					assignUVs(geometry);
+					for (i = 0; i < geometry.faces.length ; i++) {
+							geometry.faces[i].color = new THREE.Color(0xFF0000);
+					}
+					mesh = new THREE.Mesh(geometry, material4);
+					mesh.scale.set(0.15, 0.15, 0.15);
+					mesh.name = "importobject";
+					scene.add(mesh);					
+				}
+				
+				function drawMode() {
+					controls.enabled = false; 
+					window.addEventListener("mousedown", drawPath, false); 
+				}
+					
+				function drawPath(event) {
+					mouse3D.x = (event.clientX / WIDTH) * 2 - 1;
+					mouse3D.y = -(event.clientY / HEIGHT) * 2 + 1;
+					mouse3D.z = 0.5;
+					projector.unprojectVector(mouse3D, camera);
+					mouse3D.sub(camera.position).normalize();
+					var ray = new THREE.Raycaster();
+					ray.set(camera.position, mouse3D)
+					var intersects = ray.intersectObjects(scene.children, true);
+					if (intersects.length > 0) {
+						var faceIndices = ['a', 'b', 'c', 'd'];  
+						var face = intersects[0].face; 
+						var normal = face.normal;
+						var color = new THREE.Color( 0xffffff );
+						var numberOfSides = ( face instanceof THREE.Face3 ) ? 3 : 4;
+						for( var j = 0; j < numberOfSides; j++ )  
+						{
+							var vertexIndex = face[ faceIndices[ j ] ];
+							console.log(scene.getObjectByName("importobject").geometry.vertices[face[faceIndices[j]]]);
+						}
+						console.log(scene.getObjectByName("importobject").geometry.vertices[face.a]);
+						console.log(intersects[0]);
+						var point = intersects[0].point;
+						console.log('Hit @ ' + point.x + ' / ' + point.y + ' / ' + point.z);
+						var linegeo = new THREE.Geometry();
+						linegeo.vertices.push(point);
+						var point2 = new THREE.Vector3((point.x + (normal.x/10)),(point.y + (normal.y/10)),(point.z + (normal.z/10)));
+						linegeo.vertices.push(point2);
+						var linemesh = new THREE.Line(linegeo,new THREE.MeshBasicMaterial({color: 0x22ff22}));
+						scene.add(linemesh);
+						cube = cube.clone();
+						cube.position.set(point.x,point.y,point.z);
+						console.log('x=' + point.x + ' y=' + point.y + ' z=' + point.z);
+						scene.add(cube);
+						linevectors[numlinevectors] = new THREE.Vector3(point2.x,point2.y,point2.z);
+						if (linevectors.length == 2) {
+							addCubes();
+						}
+						numlinevectors++;
+					}
+				}
+				
+				function addCubes() {
+					
+					var geometry = new THREE.Geometry();
+					geometry.vertices.push(linevectors[0]);
+					geometry.vertices.push(linevectors[1]);
+					var line2 = new THREE.Line(geometry, new THREE.MeshBasicMaterial({color: 0x22ff22}));
+					scene.add(line2);
+					var middlevector = new THREE.Vector3(((linevectors[0].x + linevectors[1].x) / 2),((linevectors[0].y + linevectors[1].y) / 2),((linevectors[0].z + linevectors[1].z) / 2));
+					var leftvector = new THREE.Vector3(((linevectors[0].x + middlevector.x) / 2),((linevectors[0].y + middlevector.y) / 2),((linevectors[0].z + middlevector.z) / 2));
+					var rightvector = new THREE.Vector3(((middlevector.x + linevectors[1].x) / 2),((middlevector.y + linevectors[1].y) / 2),((middlevector.z + linevectors[1].z) / 2));
+					//var cube = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.05), new THREE.MeshBasicMaterial({color: 0xff2222}));
+					cube = cube.clone();
+					cube.position.set(leftvector.x,leftvector.y,leftvector.z);
+					scene.add(cube);
+					cube = cube.clone();
+					cube.position.set(middlevector.x,middlevector.y,middlevector.z);
+					scene.add(cube);
+					cube = cube.clone();
+					cube.position.set(rightvector.x,rightvector.y,rightvector.z);
+					scene.add(cube);
+					leftvector.sub(camera.position).normalize();
+					middlevector.sub(camera.position).normalize();
+					rightvector.sub(camera.position).normalize();
+					var cubevectors = [];
+					cubevectors.push(leftvector);
+					cubevectors.push(middlevector);
+					cubevectors.push(rightvector);
+					var targetobjects = []; 
+					var intersectsarray = [];
+					var numPoints = 10;	
+					var pointsarray = [];
+					targetobjects.push(scene.getObjectByName("importobject"));
+					for (i=0;i<cubevectors.length;i++){
+						console.log(cubevectors[i])
+						var ray = new THREE.Raycaster(camera.position, cubevectors[i]);
+						console.log(ray);
+						intersects = ray.intersectObjects(targetobjects, true);
+						console.log(targetobjects);
+						console.log(intersects);
+						if (intersects.length != 0) {
+							cube = cube.clone();
+							cube.position.set(intersects[0].point.x,intersects[0].point.y,intersects[0].point.z);
+							scene.add(cube);
+							console.log(intersects[0].point.x)
+							pointsarray.push(intersects[0].point);
+						}
+					}
+					var spline = new THREE.SplineCurve3(pointsarray[0]);
+					var splinePoints = spline.getPoints(numPoints);
+					// smooth my curve over this many points
+
+
+
+					var splinegeometry = new THREE.Geometry();
+					
+
+					for(var i = 0; i < splinePoints.length; i++){
+						geometry.vertices.push(splinePoints[i]);  
+					}
+
+					var splineline = new THREE.Line(splinegeometry, material2);
+					scene.add(splineline);
+				}
+				
+				function calcDistance(v1,v2){
+					dx = v1.x - v2.x;
+					dy = v1.y - v2.y;
+					dz = v1.z - v2.z;
+					return distance = Math.sqrt(dx*dx+dy*dy+dz*dz);
+				}
+				
+				function addText(event){
+					var chr = String.fromCharCode(event.keyCode);
+					if (event.keyCode == 8) {chr = 'backspace'};
+					console.log(chr);
+					var loader = new THREE.OBJLoader();
+					loader.load( "models/cambria.obj", function ( object ) {
+					for ( var i = 0, l = object.children.length; i < l; i ++ ) {
+						if (object.children[i] instanceof THREE.Mesh && object.children[i].name == chr){
+							letterobject = object.children[i];
+							j += 1;
+							letterobject.name = 'object' + j;
+							letterobject.position.x = xpos;
+							scene.add(letterobject);
+							xpos += 0.5;
+						} 
+						
+					}
+					} );
+					if (chr == 'backspace') {
+							remobject = scene.getObjectByName('object' + j);
+							scene.remove(remobject);
+							xpos = xpos - 0.5;
+							j = j - 1;
+							
+					}
+				}
+
+				function reScale(e) {
+					var xscale = (document.getElementById("xscaler").value * 0.002)
+					var yscale = (document.getElementById("yscaler").value * 0.002)
+					var zscale = (document.getElementById("zscaler").value * 0.002)
+					mesh.scale.set(xscale,yscale,zscale);
+				}
+				
+				function doReset() {
+					mesh.scale.set(0.1,0.1,0.1);
+					document.getElementById("xscaler").value = "55";
+					document.getElementById("yscaler").value = "55";
+					document.getElementById("zscaler").value = "55";
+				}
+				
+				function setMat() {
+					switch(event.srcElement.id) {
+					case "mat1":
+					scene.getObjectByName("importobject").material = material1;
+					break;
+					case "mat2":
+					scene.getObjectByName("importobject").material = material2;
+					break;
+					case "mat3":
+					scene.getObjectByName("importobject").material = material3;
+					break;
+					case "mat4":
+					scene.getObjectByName("importobject").material = material4;
+					break;
+					}
+				}
+				
+				// add camera control to drag
+				controls = new THREE.OrbitControls(camera, renderer.domElement);
+			}
+			
+			function animate() {
+				requestAnimationFrame(animate);
+				renderer.render(scene, camera);
+				controls.update();
+				//modifier for shadermaterial
+				customUniforms.time.value += 0.1;
+			}
+			
+		</script>
+	</body>
+</html>
